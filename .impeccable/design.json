@@ -1,0 +1,24 @@
+{
+  "spacing": {
+    "contentMarginPx": 42,
+    "sidebarPx": 228
+  },
+  "typography": {
+    "body": "Segoe UI",
+    "code": "Consolas",
+    "titlePx": 30,
+    "bodyPx": 14
+  },
+  "schemaVersion": 1,
+  "mode": "operate",
+  "colors": {
+    "danger": "#ad3035",
+    "muted": "#586679",
+    "line": "#e1e5eb",
+    "text": "#202c3d",
+    "background": "#f5f6f8",
+    "accent": "#285c49",
+    "paper": "#ffffff"
+  },
+  "radiusPx": 8
+}

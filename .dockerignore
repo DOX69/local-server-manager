@@ -1,0 +1,8 @@
+target
+.git
+artifacts
+*.log
+*.ps1
+*.cmd
+README.md
+.impeccable

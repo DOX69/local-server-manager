@@ -1,0 +1,17 @@
+name: localdeck
+services:
+  dashboard:
+    image: localdeck:local
+    build: .
+    container_name: localdeck
+    ports:
+      - "127.0.0.1:4780:4780"
+    environment:
+      LOCALDECK_TOKEN: ${LOCALDECK_TOKEN:?Démarrez avec Start-Localdeck.ps1}
+      LOCALDECK_HOST: http://host.docker.internal:4781
+    restart: "no"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    labels:
+      localdeck.description: "Monitoring des serveurs Windows et Docker"
