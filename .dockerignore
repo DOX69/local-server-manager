@@ -1,6 +1,8 @@
 target
 .git
 artifacts
+web/node_modules
+web/dist
 *.log
 *.ps1
 *.cmd

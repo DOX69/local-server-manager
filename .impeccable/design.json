@@ -1,24 +1,25 @@
 {
   "spacing": {
     "contentMarginPx": 42,
-    "sidebarPx": 228
+    "sidebarPx": 258
   },
   "typography": {
-    "body": "Segoe UI",
-    "code": "Consolas",
-    "titlePx": 30,
+    "body": "Geist, Segoe UI",
+    "code": "Cascadia Code, Consolas",
+    "titlePx": 37,
     "bodyPx": 14
   },
   "schemaVersion": 1,
   "mode": "operate",
   "colors": {
-    "danger": "#ad3035",
-    "muted": "#586679",
-    "line": "#e1e5eb",
-    "text": "#202c3d",
-    "background": "#f5f6f8",
-    "accent": "#285c49",
-    "paper": "#ffffff"
+    "danger": "#eb6574",
+    "muted": "#8995a8",
+    "line": "#283344",
+    "text": "#edf3fa",
+    "background": "#080b14",
+    "accent": "#7ae9ef",
+    "paper": "#111724",
+    "violet": "#b99aff"
   },
-  "radiusPx": 8
+  "radiusPx": 10
 }

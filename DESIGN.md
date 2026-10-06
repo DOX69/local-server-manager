@@ -1,9 +1,11 @@
 # Interface Localdeck
 
-Mode Operate. L'inventaire occupe la page, avec navigation Serveurs, Docker et Worktrees. Les détails sont dans un panneau latéral. Seul l'arrêt demande une confirmation.
+Tableau de contrôle cyberpunk sombre pour un outil qui observe le poste local. La navigation reste à gauche sur ordinateur et passe au-dessus du contenu sur mobile. La table garde la priorité visuelle.
 
-Fond `#f5f6f8`, papier `#ffffff`, texte `#202c3d`, secondaire `#586679`, séparateurs `#e1e5eb`. Vert `#285c49` pour la sélection et les origines reconnues. Rouge `#ad3035` réservé à l'arrêt. Ambre `#815c17` sur `#fff3d9` pour les avertissements.
+Le fond bleu nuit porte une grille discrète. Les cartes restent presque noires, avec des filets fins et quelques reflets cyan. Le cyan identifie l'activité locale. Le violet sert d'accent pour OpenCode et les worktrees. Le rouge est réservé aux actions d'arrêt. Les témoins verts indiquent les ressources actives.
 
-Segoe UI pour les commandes Windows. Consolas pour ports, PID, chemins et commandes. Corps 14 px, titre 30 px, données 13 px. Navigation de 228 px, marges de contenu 42 px. Les tables défilent horizontalement sur mobile.
+La navigation présente le PC détecté et les sections Serveurs, Docker et Worktrees. Trois cartes résument uniquement les données du collecteur. La recherche, les filtres de colonne et le tri restent dans la barre d'inventaire. Les ports, PID, chemins et commandes utilisent une police monospace. Les détails s'ouvrent dans un panneau latéral ; l'arrêt garde une confirmation explicite.
 
-Les données proviennent du collecteur. Les états chargement, déconnexion, inventaire ancien, vide et erreur sont explicites. Le clavier atteint les filtres, actions et dialogues.
+L'interface utilise React, Vite et les composants shadcn/ui. Le thème s'appuie sur leurs variables sémantiques, puis ajoute les états de statut propres à Localdeck. Les tableaux défilent horizontalement sur mobile. Les contrôles restent accessibles au clavier et réduisent leurs animations si le système le demande.
+
+Les états de chargement, déconnexion, données anciennes, inventaire vide et avertissement du collecteur sont visibles. Les données restent locales et proviennent du collecteur Windows.

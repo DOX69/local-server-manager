@@ -1,12 +1,12 @@
 # Localdeck
 
-Inventaire local des serveurs Windows, conteneurs Docker et worktrees Git. Backend et collecteur en Rust. Aucune donnée envoyée à un service externe.
+Inventaire local des serveurs Windows, conteneurs Docker et worktrees Git. Backend et collecteur en Rust. Interface React avec des composants shadcn/ui. Aucune donnée envoyée à un service externe.
 
 ## Démarrer
 
-Prérequis : Windows 64 bits, Docker Desktop en mode conteneurs Linux, Rust/Cargo et Git sur le PATH.
+Prérequis : Windows 64 bits, Docker Desktop en mode conteneurs Linux, Node.js 22+, Rust/Cargo et Git sur le PATH.
 
-Double-cliquez sur `Démarrer.cmd`. Le premier lancement compile le collecteur Windows et construit l'image `localdeck:local`. Les lancements suivants réutilisent les caches. Ouvrez [localhost:4780](http://localhost:4780).
+Double-cliquez sur `Démarrer.cmd`. Le premier lancement compile l'interface, le collecteur Windows et construit l'image `localdeck:local`. Les lancements suivants réutilisent les caches. Ouvrez [localhost:4780](http://localhost:4780).
 
 ```powershell
 .\Start-Localdeck.ps1
@@ -59,6 +59,8 @@ Les processus internes de WSL et des conteneurs Linux ne figurent pas comme proc
 ## Développer et vérifier
 
 ```powershell
+npm ci --prefix .\web
+npm run build --prefix .\web
 cargo test --locked
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
@@ -67,6 +69,6 @@ cargo fmt --check
 
 Le test d'intégration nécessite une instance Localdeck active, Node et l'image `redis:7-alpine` disponible. Il crée un repo temporaire avec un chemin contenant des espaces, lance un serveur après le collecteur, vérifie son attribution et son arrêt, puis arrête un conteneur jetable. Il nettoie uniquement ses fixtures.
 
-Après modification du binaire, fermez le collecteur avec `Arrêter.cmd` avant de recompiler. Le backend embarque les trois fichiers web dans le binaire. Relancez `Démarrer.cmd` pour reconstruire aussi l'image.
+Les commandes Cargo embarquent la dernière sortie de `web`. Lancez d'abord `npm ci --prefix .\web` puis `npm run build --prefix .\web`. `Start-Localdeck.ps1` fait ces étapes automatiquement avant de recompiler le binaire. Après modification du binaire, fermez le collecteur avec `Arrêter.cmd` avant de le recompiler. Relancez `Démarrer.cmd` pour reconstruire aussi l'image Docker.
 
 Si le collecteur est indisponible, consultez `%LOCALAPPDATA%\Localdeck\collector-error.log`. Vérifiez que les ports 4780/4781 sont libres et que Docker Desktop tourne. Si le pare-feu bloque la communication avec le collecteur, ajustez la règle pour Docker Desktop selon votre configuration réseau.
