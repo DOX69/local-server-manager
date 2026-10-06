@@ -8,7 +8,7 @@ web
 
 ## Stack
 
-Rust. Interface HTML/CSS/JavaScript embarquée dans le binaire, image Docker Desktop. Collecteur Rust natif Windows pour lire les processus de l'hôte.
+Backend et collecteur en Rust. Interface React/Vite avec composants shadcn/ui, compilée en fichiers statiques puis embarquée dans le binaire. Image Docker Desktop. Le collecteur Rust natif Windows lit les processus de l'hôte.
 
 ## Users
 

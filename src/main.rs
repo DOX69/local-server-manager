@@ -25,7 +25,7 @@ fn respond(req: Request, status: u16, body: String, mime: &str) {
         ("X-Frame-Options", "DENY"),
         (
             "Content-Security-Policy",
-            "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'",
+            "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'",
         ),
     ] {
         response.add_header(Header::from_bytes(name, value).unwrap());
@@ -166,14 +166,17 @@ fn main() {
         } else if !collector && req.method() == &Method::Get {
             let asset = match path.as_str() {
                 "/" => Some((
-                    include_str!("../web/index.html"),
+                    include_str!("../web/dist/index.html"),
                     "text/html; charset=utf-8",
                 )),
-                "/app.js" => Some((
-                    include_str!("../web/app.js"),
+                "/assets/app.js" => Some((
+                    include_str!("../web/dist/assets/app.js"),
                     "text/javascript; charset=utf-8",
                 )),
-                "/style.css" => Some((include_str!("../web/style.css"), "text/css; charset=utf-8")),
+                "/assets/style.css" => Some((
+                    include_str!("../web/dist/assets/style.css"),
+                    "text/css; charset=utf-8",
+                )),
                 _ => None,
             };
             if let Some((body, mime)) = asset {

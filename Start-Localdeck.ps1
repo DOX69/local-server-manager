@@ -7,7 +7,15 @@ $statePath = Join-Path $stateDirectory 'collector.json'
 $binaryPath = Join-Path $projectDirectory 'target\release\localdeck.exe'
 Push-Location $projectDirectory
 try {
-    if (-not $SkipBuild -or -not (Test-Path -LiteralPath $binaryPath)) {
+    $buildRequired = -not $SkipBuild -or -not (Test-Path -LiteralPath $binaryPath)
+    if ($buildRequired) {
+        Push-Location (Join-Path $projectDirectory 'web')
+        try {
+            & npm.cmd ci --no-audit --no-fund
+            if ($LASTEXITCODE -ne 0) { throw 'Installation du frontend échouée.' }
+            & npm.cmd run build
+            if ($LASTEXITCODE -ne 0) { throw 'Compilation du frontend échouée.' }
+        } finally { Pop-Location }
         & cargo build --release --locked
         if ($LASTEXITCODE -ne 0) { throw 'Compilation Rust échouée.' }
     }
