@@ -8,24 +8,62 @@ let token='',data=null,view='servers',filtered=[],pending=null,busy=false,refres
 async function api(path,body){const r=await fetch(path,{method:body?'POST':'GET',headers:{'X-Localdeck-Token':token,...(body?{'Content-Type':'application/json'}:{})},body:body?JSON.stringify(body):undefined});const result=await r.json();if(!r.ok)throw new Error(result.error||`Erreur ${r.status}`);return result;}
 function toast(message){$('toast').textContent=message;$('toast').hidden=false;setTimeout(()=>$('toast').hidden=true,6500);}
 function badge(agent){return `<span class="badge ${agent==='Inconnu'?'neutral':''}">${esc(agent)}</span>`;}
+const option=(key,label)=>({key:String(key??''),label:String(label??'')});
+const serverProject=r=>r.repo?basename(r.repo):r.name;
+const serverOrigin=r=>[r.agent,r.repo?.includes('/.codex/')||r.repo?.includes('\\.codex\\')?'Worktree Codex':'',r.containers?.length?`Docker · ${r.containers.join(', ')}`:''].filter(Boolean).join(' · ');
+const containerPorts=r=>r.ports.map(p=>`${p.host_ip}:${p.host_port} → ${p.container_port}`).join(', ')||'Non publié';
+const tableColumns={
+ servers:[
+  {key:'endpoint',label:'Port / protocole',value:r=>option(`${r.protocol}:${r.port}`,`:${r.port} · ${r.protocol}`),sort:r=>r.port},
+  {key:'project',label:'Projet / processus',value:r=>option((r.repo||r.cwd||r.name).toLowerCase(),`${serverProject(r)} · ${short(r.repo||r.cwd||'')}`),sort:r=>`${serverProject(r)} · ${short(r.repo||r.cwd||'')}`},
+  {key:'origin',label:'Origine',value:r=>option(serverOrigin(r).toLowerCase(),serverOrigin(r)),sort:r=>r.agent},
+  {key:'usage',label:'Utilisation',value:r=>option(r.connections,`${r.connections} connexion${r.connections!==1?'s':''}`),sort:r=>r.connections},
+  {key:'started',label:'Depuis',value:r=>option(r.started||'unknown',age(r.started)),sort:r=>r.started?Date.now()/1000-r.started:Infinity},
+  {key:'actions',label:'Actions',value:r=>option(r.stoppable?'stoppable':'protected',r.stoppable?'Arrêtable':'Protégé'),sort:r=>r.stoppable?0:1}
+ ],
+ containers:[
+  {key:'container',label:'Conteneur / image',value:r=>option(`${r.name}|${r.image}`.toLowerCase(),`${r.name} · ${r.image}`),sort:r=>r.name},
+  {key:'project',label:'Projet Compose',value:r=>option(`${r.project||'Hors Compose'}|${r.service||''}`.toLowerCase(),[r.project||'Hors Compose',r.service||''].filter(Boolean).join(' · ')),sort:r=>`${r.project||'Hors Compose'} · ${r.service||''}`},
+  {key:'ports',label:'Ports publiés',value:r=>option(containerPorts(r),containerPorts(r)),sort:r=>containerPorts(r)},
+  {key:'state',label:'État',value:r=>option(`${r.state}|${r.health||''}`.toLowerCase(),[r.state==='running'?'En cours':r.state,r.health||''].filter(Boolean).join(' · ')),sort:r=>r.state},
+  {key:'actions',label:'Actions',value:r=>{const label=r.stoppable?'Arrêtable':r.state==='running'?'Protégé':'Arrêté';return option(label.toLowerCase(),label);},sort:r=>r.stoppable?0:r.state==='running'?1:2}
+ ],
+ worktrees:[
+  {key:'project',label:'Projet / worktree',value:r=>option(r.path.toLowerCase(),`${basename(r.repo)} · ${short(r.path)}`),sort:r=>`${basename(r.repo)} · ${short(r.path)}`},
+  {key:'branch',label:'Branche',value:r=>option(r.branch,r.branch),sort:r=>r.branch},
+  {key:'kind',label:'Type',value:r=>option(r.kind,r.kind),sort:r=>r.kind},
+  {key:'servers',label:'Serveurs',value:r=>option(r.servers||0,r.servers?`${r.servers} port${r.servers!==1?'s':''}`:'Aucun serveur'),sort:r=>r.servers||0},
+  {key:'state',label:'État',value:r=>{const label=[r.exists?'Présent':'Dossier absent',r.locked?'Verrouillé':''].filter(Boolean).join(' · ');return option(`${r.exists}|${r.locked}`,label);},sort:r=>`${r.exists?'Présent':'Dossier absent'} · ${r.locked?'Verrouillé':''}`}
+ ]
+};
+const columnFilters={servers:{},containers:{},worktrees:{}};
+const sortSettings={servers:null,containers:null,worktrees:null};
+let baseRows=[],openColumnMenu=null;
+function columnOptions(targetView,key,rows){const column=tableColumns[targetView].find(item=>item.key===key),options=new Map();for(const row of rows){const value=column.value(row),existing=options.get(value.key);if(existing)existing.count++;else options.set(value.key,{...value,count:1});}return [...options.values()].sort((a,b)=>a.label.localeCompare(b.label,'fr',{numeric:true,sensitivity:'base'}));}
+function compareValues(a,b){if(a===b)return 0;if(typeof a==='number'&&typeof b==='number')return a-b;return String(a??'').localeCompare(String(b??''),'fr',{numeric:true,sensitivity:'base'});}
+function closeColumnMenu(){if(!openColumnMenu)return;const button=$('thead').querySelector(`[data-column-menu="${openColumnMenu.key}"]`);button?.setAttribute('aria-expanded','false');openColumnMenu=null;$('column-menu').hidden=true;}
+function renderColumnMenu(){const menu=$('column-menu');if(!openColumnMenu||openColumnMenu.view!==view){menu.hidden=true;return;}const {key}=openColumnMenu,column=tableColumns[view].find(item=>item.key===key),options=columnOptions(view,key,baseRows),selected=columnFilters[view][key],sort=sortSettings[view],button=$('thead').querySelector(`[data-column-menu="${key}"]`);if(!button){menu.hidden=true;return;}button.setAttribute('aria-expanded','true');menu.innerHTML=`<div class="column-menu-heading"><strong>${esc(column.label)}</strong><button type="button" data-menu-close aria-label="Fermer le menu">×</button></div><div class="column-menu-sort"><button type="button" data-sort-direction="asc" aria-pressed="${sort?.key===key&&sort.direction==='asc'}">Tri croissant</button><button type="button" data-sort-direction="desc" aria-pressed="${sort?.key===key&&sort.direction==='desc'}">Tri décroissant</button><button type="button" data-sort-direction="none" aria-pressed="${!sort}">Réinitialiser le tri</button></div><div class="column-menu-filter"><strong>Filtrer les valeurs</strong><div class="column-menu-actions"><button type="button" data-filter-action="all">Tout sélectionner</button><button type="button" data-filter-action="none">Tout désélectionner</button></div><div class="column-menu-options">${options.length?options.map(item=>`<label><input type="checkbox" data-filter-value="${esc(item.key)}" ${!selected||selected.has(item.key)?'checked':''}><span>${esc(item.label)}</span><small>${item.count}</small></label>`).join(''):'<span class="column-menu-empty">Aucune valeur</span>'}</div></div>`;menu.hidden=false;const rect=button.getBoundingClientRect(),width=menu.getBoundingClientRect().width,height=Math.min(menu.scrollHeight,window.innerHeight-24);let top=rect.bottom+4;if(top+height>window.innerHeight-12)top=Math.max(12,rect.top-height-4);menu.style.left=`${Math.max(12,Math.min(rect.right-width,window.innerWidth-width-12))}px`;menu.style.top=`${top}px`;}
 function render(){
  if(!data)return;
  $('hostname').textContent=data.hostname||'PC Windows';
- $('server-count').textContent=data.servers.length;$('docker-count').textContent=data.containers.length;$('tree-count').textContent=data.worktrees.length;
+ $('server-count').textContent=new Set(data.servers.filter(r=>r.stoppable).map(r=>r.pid)).size;$('docker-count').textContent=data.containers.filter(r=>r.state==='running').length;$('tree-count').textContent=data.worktrees.filter(r=>r.servers>0).length;
  const labels={servers:['Serveurs locaux',"Retrouvez ce qui tourne, d'où ça vient et qui s'y connecte.",'Processus en écoute'],containers:['Conteneurs Docker','Conteneurs actifs et arrêtés, ports publiés et projets Compose.','Conteneurs sur ce PC'],worktrees:['Worktrees Git','Retrouvez aussi les copies de travail sans serveur actif.','Copies de travail détectées']};
  const [title,subtitle,list]=labels[view];$('title').textContent=title;$('subtitle').textContent=subtitle;$('list-title').textContent=list;$('crumb').textContent=view==='servers'?'Serveurs':view==='containers'?'Docker':'Worktrees';
  $('system-control').hidden=view!=='servers';$('agent').parentElement.hidden=view==='containers';
  if($('agent').dataset.view!==view){const values=view==='worktrees'?['Codex','Git']:['Codex','OpenCode','Inconnu'];$('agent').innerHTML='<option value="all">Toutes</option>'+values.map(v=>`<option>${v}</option>`).join('');$('agent').dataset.view=view;$('agent').previousSibling.textContent=view==='worktrees'?'Type':'Origine';}
  const q=$('search').value.toLowerCase(),filter=$('agent').value;
- filtered=data[view].filter(row=>{
+ baseRows=data[view].filter(row=>{
   if(view==='servers'&&!$('system').checked&&!row.stoppable&&!row.repo&&row.agent==='Inconnu'&&!row.containers?.length)return false;
   if(view==='servers'&&filter!=='all'&&row.agent!==filter)return false;
   if(view==='worktrees'&&filter!=='all'&&row.kind!==filter)return false;
   return JSON.stringify(row).toLowerCase().includes(q);
  });
+ filtered=baseRows.filter(row=>Object.entries(columnFilters[view]).every(([key,selected])=>selected.has(tableColumns[view].find(column=>column.key===key).value(row).key)));
+ const activeSort=sortSettings[view];if(activeSort){const column=tableColumns[view].find(item=>item.key===activeSort.key);filtered.sort((a,b)=>compareValues(column.sort(a),column.sort(b))*(activeSort.direction==='asc'?1:-1));}
  $('visible-count').textContent=`${filtered.length} affichés · ${data[view].length} détectés`;
- const columns=view==='servers'?['Port / protocole','Projet / processus','Origine','Utilisation','Depuis','Actions']:view==='containers'?['Conteneur / image','Projet Compose','Ports publiés','État','Actions']:['Projet / worktree','Branche','Type','Serveurs','État'];
- $('thead').innerHTML='<tr>'+columns.map(c=>`<th scope="col">${c}</th>`).join('')+'</tr>';
+ const columns=tableColumns[view];
+ $('thead').innerHTML='<tr>'+columns.map(column=>`<th scope="col"><div class="column-heading"><span>${esc(column.label)}</span><button class="column-menu-toggle" type="button" data-column-menu="${esc(column.key)}" aria-label="Options de ${esc(column.label)}" aria-expanded="${openColumnMenu?.view===view&&openColumnMenu.key===column.key}"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg></button></div></th>`).join('')+'</tr>';
+ renderColumnMenu();
  $('tbody').innerHTML=filtered.map((r,i)=>{
   if(view==='servers'){
    const location=r.repo||r.cwd;const title=r.repo?basename(r.repo):r.name;
@@ -47,9 +85,16 @@ function details(r){
  $('details').showModal();
 }
 function requestStop(r){if(busy)return;pending=view==='containers'?{kind:'container',id:r.id,started:r.started}:{kind:'process',pid:r.pid,started:r.started};$('confirm-description').textContent=view==='containers'?`Le conteneur « ${r.name} » sera arrêté. Ses volumes seront conservés.`:`Le processus ${r.name}, PID ${r.pid}, sera terminé. Tous ses ports seront fermés, dont ${r.port}. Un superviseur peut le relancer.`;$('confirm').showModal();}
-document.querySelectorAll('[data-view]').forEach(b=>b.addEventListener('click',()=>{view=b.dataset.view;document.querySelectorAll('[data-view]').forEach(n=>n.classList.toggle('active',n===b));$('search').value='';$('agent').value='all';render();}));
+$('thead').addEventListener('click',e=>{const button=e.target.closest('[data-column-menu]');if(!button)return;const key=button.dataset.columnMenu;if(openColumnMenu?.view===view&&openColumnMenu.key===key){closeColumnMenu();return;}closeColumnMenu();openColumnMenu={view,key};renderColumnMenu();});
+$('column-menu').addEventListener('click',e=>{if(e.target.closest('[data-menu-close]')){closeColumnMenu();return;}const menuState=openColumnMenu;if(!menuState)return;const sortButton=e.target.closest('[data-sort-direction]');if(sortButton){const direction=sortButton.dataset.sortDirection;sortSettings[view]=direction==='none'?null:{key:menuState.key,direction};closeColumnMenu();render();return;}const filterAction=e.target.closest('[data-filter-action]');if(filterAction){if(filterAction.dataset.filterAction==='all')delete columnFilters[view][menuState.key];else columnFilters[view][menuState.key]=new Set();render();}});
+$('column-menu').addEventListener('change',e=>{const input=e.target.closest('input[data-filter-value]');if(!input||!openColumnMenu)return;const {key}=openColumnMenu,selected=new Set(columnFilters[view][key]??columnOptions(view,key,baseRows).map(item=>item.key));if(input.checked)selected.add(input.dataset.filterValue);else selected.delete(input.dataset.filterValue);columnFilters[view][key]=selected;render();});
+document.addEventListener('click',e=>{if(!openColumnMenu||e.target.closest('#column-menu')||e.target.closest('[data-column-menu]'))return;closeColumnMenu();});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeColumnMenu();});
+window.addEventListener('resize',closeColumnMenu);document.addEventListener('scroll',e=>{if(!e.target.closest?.('#column-menu'))closeColumnMenu();},true);
+document.querySelectorAll('[data-view]').forEach(b=>b.addEventListener('click',()=>{closeColumnMenu();view=b.dataset.view;document.querySelectorAll('[data-view]').forEach(n=>n.classList.toggle('active',n===b));$('search').value='';$('agent').value='all';render();}));
 $('tbody').addEventListener('click',e=>{const detail=e.target.closest('[data-detail]'),stop=e.target.closest('[data-stop]');if(detail)details(filtered[+detail.dataset.detail]);if(stop)requestStop(filtered[+stop.dataset.stop]);});
 for(const id of ['search','system','agent'])$(id).addEventListener('input',render);
 $('refresh').addEventListener('click',refresh);$('close-details').addEventListener('click',()=>$('details').close());$('cancel-stop').addEventListener('click',()=>$('confirm').close());
 $('confirm-stop').addEventListener('click',async()=>{if(!pending||busy)return;busy=true;$('confirm-stop').disabled=true;$('confirm-stop').textContent='Arrêt en cours…';try{const result=await api('/api/stop',pending);$('confirm').close();toast(result.message);await refresh();setTimeout(refresh,10000);}catch(e){$('confirm').close();toast(e.message);}finally{busy=false;pending=null;$('confirm-stop').disabled=false;$('confirm-stop').textContent='Arrêter';}});
+$('sidebar-toggle').addEventListener('click',()=>{const collapsed=$('sidebar').classList.toggle('collapsed'),action=collapsed?'Déplier':'Réduire';$('sidebar-toggle').setAttribute('aria-expanded',String(!collapsed));$('sidebar-toggle').setAttribute('aria-label',`${action} le panneau latéral`);$('sidebar-toggle').title=`${action} le panneau latéral`;});
 refresh();setInterval(refresh,8000);
