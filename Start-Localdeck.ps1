@@ -7,18 +7,6 @@ $statePath = Join-Path $stateDirectory 'collector.json'
 $binaryPath = Join-Path $projectDirectory 'target\release\localdeck.exe'
 Push-Location $projectDirectory
 try {
-    $buildRequired = -not $SkipBuild -or -not (Test-Path -LiteralPath $binaryPath)
-    if ($buildRequired) {
-        Push-Location (Join-Path $projectDirectory 'web')
-        try {
-            & npm.cmd ci --no-audit --no-fund
-            if ($LASTEXITCODE -ne 0) { throw 'Installation du frontend échouée.' }
-            & npm.cmd run build
-            if ($LASTEXITCODE -ne 0) { throw 'Compilation du frontend échouée.' }
-        } finally { Pop-Location }
-        & cargo build --release --locked
-        if ($LASTEXITCODE -ne 0) { throw 'Compilation Rust échouée.' }
-    }
     & docker info --format '{{.OSType}}'
     if ($LASTEXITCODE -ne 0) { throw 'Démarrez Docker Desktop, puis relancez Localdeck.' }
     $collectorState = $null
@@ -29,6 +17,19 @@ try {
             $collectorState = $candidateState
         }
     }
+    $buildRequired = -not $SkipBuild -or -not (Test-Path -LiteralPath $binaryPath)
+    if ($buildRequired -and -not $collectorState) {
+        Push-Location (Join-Path $projectDirectory 'web')
+        try {
+            & npm.cmd ci --no-audit --no-fund
+            if ($LASTEXITCODE -ne 0) { throw 'Installation du frontend échouée.' }
+            & npm.cmd run build
+            if ($LASTEXITCODE -ne 0) { throw 'Compilation du frontend échouée.' }
+        } finally { Pop-Location }
+        & cargo build --release --locked
+        if ($LASTEXITCODE -ne 0) { throw 'Compilation Rust échouée.' }
+    }
+    if ($collectorState -and $buildRequired) { Write-Host 'Collecteur Localdeck déjà actif, réutilisation du processus.' }
     if (-not $collectorState) {
         $tokenBytes = New-Object byte[] 32
         $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
