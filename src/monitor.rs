@@ -94,6 +94,27 @@ pub fn git(path: &Path, args: &[&str]) -> Option<String> {
     full.extend_from_slice(args);
     command("git", &full, 4).ok().map(|s| s.trim().to_string())
 }
+fn parse_worktree_changes(output: &str) -> Vec<Value> {
+    let mut entries = output.split('\0').filter(|entry| !entry.is_empty());
+    let mut changes = Vec::new();
+    while let Some(entry) = entries.next() {
+        if entry.len() < 4 {
+            continue;
+        }
+        let code = &entry[..2];
+        let path = &entry[3..];
+        let path = if code.contains('R') || code.contains('C') {
+            entries
+                .next()
+                .map(|source| format!("{source} → {path}"))
+                .unwrap_or_else(|| path.to_string())
+        } else {
+            path.to_string()
+        };
+        changes.push(json!({"path":path,"code":code}));
+    }
+    changes
+}
 fn discover(path: &Path, depth: usize, roots: &mut BTreeSet<PathBuf>, budget: &mut usize) {
     if *budget == 0 {
         return;
@@ -365,7 +386,25 @@ impl Monitor {
                                 .lines()
                                 .find_map(|l| l.strip_prefix("branch refs/heads/"))
                                 .unwrap_or("HEAD détachée");
-                            worktrees.insert(path.to_string(),json!({"path":path,"repo":repo,"branch":branch,"exists":Path::new(path).exists(),"locked":block.lines().any(|l|l.starts_with("locked")),"kind":if path.contains(".codex") {"Codex"} else {"Git"}}));
+                            let exists = Path::new(path).exists();
+                            let changes = exists
+                                .then(|| {
+                                    git(
+                                        Path::new(path),
+                                        &[
+                                            "status",
+                                            "--porcelain=v1",
+                                            "-z",
+                                            "--untracked-files=normal",
+                                        ],
+                                    )
+                                })
+                                .flatten()
+                                .map(|status| parse_worktree_changes(&status));
+                            let changes_available = changes.is_some();
+                            let changes = changes.unwrap_or_default();
+                            let changes_count = changes.len();
+                            worktrees.insert(path.to_string(),json!({"path":path,"repo":repo,"branch":branch,"exists":exists,"locked":block.lines().any(|l|l.starts_with("locked")),"kind":if path.contains(".codex") {"Codex"} else {"Git"},"changes_available":changes_available,"changes_count":changes_count,"changes":changes}));
                         }
                     }
                 }

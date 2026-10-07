@@ -99,6 +99,9 @@ type WorktreeRow = {
   servers: number
   exists: boolean
   locked: boolean
+  changes_available: boolean
+  changes_count: number
+  changes: { path: string; code: string }[]
 }
 
 type ResourceRow = ServerRow | ContainerRow | WorktreeRow
@@ -126,7 +129,7 @@ type Sort = { key: string; direction: "asc" | "desc" } | null
 type StopTarget =
   | { kind: "process"; pid: number; started?: number | null; name: string; port: number }
   | { kind: "container"; id: string; started?: string; name: string }
-type DetailTarget = { view: View; row: ResourceRow } | null
+type DetailTarget = { view: View; row: ResourceRow; servers?: ServerRow[] } | null
 
 const initialSnapshot: Snapshot = { loading: true, servers: [], containers: [], worktrees: [] }
 const views: { key: View; label: string; icon: typeof Server }[] = [
@@ -182,6 +185,17 @@ function serverOrigin(row: ServerRow) {
 
 function containerPorts(row: ContainerRow) {
   return row.ports.map((port) => `${port.host_ip}:${port.host_port} → ${port.container_port}`).join(", ") || "Non publié"
+}
+
+function worktreeChangeLabel(code: string) {
+  if (code === "??") return "Non suivi"
+  if (code.includes("U")) return "Conflit"
+  if (code.includes("D")) return "Supprimé"
+  if (code.includes("A")) return "Ajouté"
+  if (code.includes("R")) return "Renommé"
+  if (code.includes("C")) return "Copié"
+  if (code.includes("M") || code.includes("T")) return "Modifié"
+  return code
 }
 
 function getColumns(view: View): Column[] {
@@ -326,11 +340,19 @@ function getColumns(view: View): Column[] {
       render: (row) => (row as WorktreeRow).servers ? <span className="live-value"><span className="status-dot" />{(row as WorktreeRow).servers} port{(row as WorktreeRow).servers !== 1 ? "s" : ""}</span> : <span className="text-muted">Aucun serveur</span>,
     },
     {
-      key: "state",
-      label: "État",
-      value: (row) => `${(row as WorktreeRow).exists}|${(row as WorktreeRow).locked}`,
-      sort: (row) => `${(row as WorktreeRow).exists ? "Présent" : "Dossier absent"} · ${(row as WorktreeRow).locked ? "Verrouillé" : ""}`,
-      render: (row) => <div className="cell-stack"><Badge variant="outline" className={(row as WorktreeRow).exists ? "status-ready" : "status-warning"}>{(row as WorktreeRow).exists ? "Présent" : "Dossier absent"}</Badge>{(row as WorktreeRow).locked ? <span className="cell-sub">Verrouillé</span> : null}</div>,
+      key: "changes",
+      label: "Modifications",
+      value: (row) => {
+        const worktree = row as WorktreeRow
+        return !worktree.changes_available ? "Indisponible" : worktree.changes_count ? "Modifié" : "Propre"
+      },
+      sort: (row) => (row as WorktreeRow).changes_available ? (row as WorktreeRow).changes_count : -1,
+      render: (row) => {
+        const worktree = row as WorktreeRow
+        if (!worktree.changes_available) return <span className="text-muted">Indisponible</span>
+        if (!worktree.changes_count) return <span className="text-muted">Propre</span>
+        return <span className="live-value"><span className="status-dot" />{worktree.changes_count} changement{worktree.changes_count === 1 ? "" : "s"}</span>
+      },
     },
   ]
 }
@@ -357,6 +379,7 @@ function App() {
   const [columnFilters, setColumnFilters] = useState<Record<View, Record<string, string[]>>>({ servers: {}, containers: {}, worktrees: {} })
   const [sorting, setSorting] = useState<Record<View, Sort>>({ servers: null, containers: null, worktrees: null })
   const [detail, setDetail] = useState<DetailTarget>(null)
+  const pendingServerDetail = useRef<ServerRow | null>(null)
   const [stopTarget, setStopTarget] = useState<StopTarget | null>(null)
   const [stopping, setStopping] = useState(false)
   const [toast, setToast] = useState("")
@@ -402,7 +425,9 @@ function App() {
   useEffect(() => {
     setSearch("")
     setAgent("all")
-    setDetail(null)
+    const server = pendingServerDetail.current
+    pendingServerDetail.current = null
+    setDetail(server ? { view: "servers", row: server } : null)
   }, [view])
 
   const showToast = useCallback((message: string) => {
@@ -449,6 +474,14 @@ function App() {
 
   const closeStopDialog = (open: boolean) => {
     if (!open && !stopping) setStopTarget(null)
+  }
+
+  function navigateToServer(server: ServerRow) {
+    if (view === "servers") setDetail({ view: "servers", row: server })
+    else {
+      pendingServerDetail.current = server
+      setView("servers")
+    }
   }
 
   return (
@@ -530,7 +563,7 @@ function App() {
                 onColumnFilters={(filters) => setColumnFilters((current) => ({ ...current, [key]: filters }))}
                 sort={sorting[key]}
                 onSort={(sort) => setSorting((current) => ({ ...current, [key]: sort }))}
-                onDetail={(row) => setDetail({ view: key, row })}
+                onDetail={(row) => setDetail({ view: key, row, ...(key === "worktrees" ? { servers: snapshot?.servers.filter((server) => server.repo?.replace(/\\/g, "/").toLowerCase() === (row as WorktreeRow).path.replace(/\\/g, "/").toLowerCase()) ?? [] } : {}) })}
                 onStop={setStopTarget}
               />
             </TabsContent>
@@ -538,7 +571,7 @@ function App() {
           <p className="privacy-footnote"><ShieldCheck aria-hidden="true" />Scan local toutes les 8 s <span>·</span> Les processus système et Localdeck restent protégés.</p>
         </section>
 
-        <DetailSheet detail={detail} onOpenChange={(open) => !open && setDetail(null)} />
+        <DetailSheet detail={detail} onOpenChange={(open) => !open && setDetail(null)} onNavigateToServer={navigateToServer} />
         <AlertDialog open={!!stopTarget} onOpenChange={closeStopDialog}>
           <AlertDialogContent>
             <AlertDialogHeader>
@@ -683,7 +716,7 @@ function DashboardView(props: DashboardViewProps) {
     }
     return (
       <TableRow key={(row as WorktreeRow).path} className="inventory-row">
-        {columns.map((column) => <TableCell key={column.key}>{column.render(row)}</TableCell>)}
+        {columns.map((column) => <TableCell key={column.key}>{(column.key === "servers" && (row as WorktreeRow).servers > 0) || (column.key === "changes" && (row as WorktreeRow).changes_count > 0) ? <Button variant="link" size="sm" className="h-auto p-0" onClick={() => onDetail(row)}>{column.render(row)}</Button> : column.render(row)}</TableCell>)}
       </TableRow>
     )
   }
@@ -817,8 +850,36 @@ function compareValues(a: string | number, b: string | number) {
   return String(a).localeCompare(String(b), "fr", { numeric: true, sensitivity: "base" })
 }
 
-function DetailSheet({ detail, onOpenChange }: { detail: DetailTarget; onOpenChange: (open: boolean) => void }) {
-  if (!detail || detail.view === "worktrees") return <Sheet open={false} onOpenChange={onOpenChange}><SheetContent side="right"><SheetHeader><SheetTitle>Détails</SheetTitle><SheetDescription>Ressource locale</SheetDescription></SheetHeader></SheetContent></Sheet>
+function DetailSheet({ detail, onOpenChange, onNavigateToServer }: { detail: DetailTarget; onOpenChange: (open: boolean) => void; onNavigateToServer: (server: ServerRow) => void }) {
+  if (!detail) return <Sheet open={false} onOpenChange={onOpenChange}><SheetContent side="right"><SheetHeader><SheetTitle>Détails</SheetTitle><SheetDescription>Ressource locale</SheetDescription></SheetHeader></SheetContent></Sheet>
+  if (detail.view === "worktrees") {
+    const row = detail.row as WorktreeRow
+    return (
+      <Sheet open onOpenChange={onOpenChange}>
+        <SheetContent side="right" className="detail-sheet">
+          <SheetHeader className="detail-header">
+            <div className="detail-kicker"><span className="overline-mark" />WORKTREE</div>
+            <SheetTitle>{basename(row.repo)}</SheetTitle>
+            <SheetDescription>{row.branch} · {row.kind}</SheetDescription>
+          </SheetHeader>
+          <div className="detail-body">
+            <dl className="detail-grid">
+              <DetailItem label="Dossier" value={row.path} mono />
+              <DetailItem label="État du dossier" value={!row.exists ? "Dossier absent" : row.locked ? "Verrouillé" : "Présent"} />
+              <DetailItem label="Modifications locales" value={row.changes_available ? `${row.changes_count} changement${row.changes_count === 1 ? "" : "s"}` : "Indisponible"} />
+              <DetailItem label="Serveurs actifs" value={`${detail.servers?.length ?? 0} port${detail.servers?.length === 1 ? "" : "s"}`} />
+            </dl>
+            <DetailSection title="Modifications locales" icon={<GitBranch aria-hidden="true" />}>
+              {!row.changes_available ? <p className="detail-empty">Le statut Git de ce dossier n’est pas disponible.</p> : row.changes.length ? row.changes.map((change) => <div key={`${change.code}:${change.path}`} className="detail-row"><div className="ancestor-title"><Badge variant="outline">{worktreeChangeLabel(change.code)}</Badge><span className="mono detail-secondary">{change.code}</span></div><span className="mono detail-secondary">{change.path}</span></div>) : <p className="detail-empty">Aucune modification locale.</p>}
+            </DetailSection>
+            <DetailSection title="Serveurs de ce worktree" icon={<Network aria-hidden="true" />}>
+              {detail.servers?.length ? detail.servers.map((server) => <div key={`${server.pid}:${server.port}`} className="detail-row"><div><strong>{server.name}</strong><span className="mono detail-secondary">:{server.port} · {server.protocol} · PID {server.pid}</span></div><Button variant="ghost" size="sm" onClick={() => onNavigateToServer(server)}>Ouvrir dans Serveurs</Button></div>) : <p className="detail-empty">Aucun serveur actif associé à ce worktree.</p>}
+            </DetailSection>
+          </div>
+        </SheetContent>
+      </Sheet>
+    )
+  }
   const isContainer = detail.view === "containers"
   const title = isContainer ? (detail.row as ContainerRow).name : `${(detail.row as ServerRow).name} · :${(detail.row as ServerRow).port}`
   return (
