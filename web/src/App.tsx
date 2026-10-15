@@ -647,7 +647,7 @@ function DashboardView(props: DashboardViewProps) {
 
   const agentOptions = view === "worktrees" ? ["Codex", "Git"] : ["Codex", "OpenCode", "Inconnu"]
   const total = data[view].length
-  const isLoading = !snapshot || Boolean(snapshot.loading)
+  const isLoading = connection === "connecting" || Boolean(snapshot?.loading)
   const statValues = view === "servers"
     ? [
       { label: "PORTS DÉTECTÉS", value: snapshot?.servers.length ?? "—", detail: "Processus en écoute", icon: Network, tone: "cyan" },
@@ -753,9 +753,9 @@ function DashboardView(props: DashboardViewProps) {
           <div className="inventory-heading-copy">
             <div className="section-kicker"><span className="section-kicker-line" />INVENTAIRE // {view === "servers" ? "TCP · UDP" : view === "containers" ? "DOCKER ENGINE" : "GIT WORKTREES"}</div>
             <CardTitle className="inventory-title">{title.list}</CardTitle>
-            <CardDescription className="inventory-caption">{snapshot ? `${visibleRows.length} affiché${visibleRows.length !== 1 ? "s" : ""} sur ${total} détecté${total !== 1 ? "s" : ""}` : "Lecture du système en cours"}</CardDescription>
+            <CardDescription className="inventory-caption">{snapshot ? `${visibleRows.length} affiché${visibleRows.length !== 1 ? "s" : ""} sur ${total} détecté${total !== 1 ? "s" : ""}` : connection === "stale" ? "Aucune donnée reçue du collecteur" : "Lecture du système en cours"}</CardDescription>
           </div>
-          <Badge variant="outline" className={`inventory-state ${connection === "stale" ? "status-idle" : "status-ready"}`}><span className={connection === "stale" ? "status-dot status-dot-muted" : "status-dot"} />{snapshot?.loading ? "Premier scan" : connection === "stale" ? "Données anciennes" : "Surveillance active"}</Badge>
+          <Badge variant="outline" className={`inventory-state ${connection === "stale" ? "status-idle" : "status-ready"}`}><span className={connection === "stale" ? "status-dot status-dot-muted" : "status-dot"} />{snapshot?.loading ? "Premier scan" : connection === "stale" ? snapshot ? "Données anciennes" : "Collecteur indisponible" : "Surveillance active"}</Badge>
         </CardHeader>
 
         {snapshot?.warnings?.length ? <div className="warning-stack">{snapshot.warnings.map((warning, index) => <Alert key={`${warning}:${index}`} variant="default" className="warning-alert"><ShieldAlert aria-hidden="true" /><div><AlertTitle>Signal du collecteur</AlertTitle><AlertDescription>{warning}</AlertDescription></div></Alert>)}</div> : null}
@@ -836,7 +836,7 @@ function DashboardView(props: DashboardViewProps) {
           ) : null}
         </div>
 
-        <div className="inventory-footer"><span><Clock3 aria-hidden="true" />{snapshot?.timestamp ? `Dernier scan à ${new Date(snapshot.timestamp * 1000).toLocaleTimeString("fr-FR")}` : "En attente du premier scan"}{snapshot?.scan_ms != null ? ` · ${(snapshot.scan_ms / 1000).toFixed(1)} s` : ""}</span><span><span className="status-dot" />Actualisation automatique · 8 s</span></div>
+        <div className="inventory-footer"><span><Clock3 aria-hidden="true" />{snapshot?.timestamp ? `Dernier scan à ${new Date(snapshot.timestamp * 1000).toLocaleTimeString("fr-FR")}` : connection === "stale" ? "Aucun scan reçu" : "En attente du premier scan"}{snapshot?.scan_ms != null ? ` · ${(snapshot.scan_ms / 1000).toFixed(1)} s` : ""}</span><span><span className="status-dot" />Actualisation automatique · 8 s</span></div>
       </Card>
 
       <p className="view-note">{view === "servers" ? "L’origine repose sur les processus parents retrouvés. Les connexions sont un instantané du scan, un serveur sans client visible peut rester utile." : view === "containers" ? "Arrêter un conteneur conserve ses volumes. Localdeck et les services partagés protégés ne peuvent pas être arrêtés ici." : "Git recense tous les worktrees des dépôts trouvés, même sans serveur actif."}</p>
