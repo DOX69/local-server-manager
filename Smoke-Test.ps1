@@ -1,6 +1,33 @@
-param([string]$Url='http://localhost:4780')
+param([string]$Url='http://localhost:4780', [switch]$RestartDashboard)
 $ErrorActionPreference='Stop'
 function Assert-True($Condition, [string]$Message) { if (-not $Condition) { throw $Message } }
+if ($RestartDashboard) {
+    . (Join-Path $PSScriptRoot 'Collector-Lifecycle.ps1')
+    $stateDirectory = Join-Path $env:LOCALAPPDATA 'Localdeck'
+    $settings = Get-Content -LiteralPath (Join-Path $stateDirectory 'settings.json') -Raw | ConvertFrom-Json
+    $shortcut = Join-Path ([Environment]::GetFolderPath('Startup')) 'Localdeck.lnk'
+    Assert-True (Test-Path -LiteralPath $shortcut) 'Le raccourci de demarrage Windows doit etre installe.'
+    & docker stop localdeck | Out-Null
+    Assert-True ($LASTEXITCODE -eq 0) 'Arret du dashboard echoue.'
+    Stop-LocaldeckHost $stateDirectory
+    # Exercise the exact logon shortcut, without running the installer or rebuilding the container.
+    Start-Process -FilePath $shortcut -WindowStyle Hidden
+    & docker start localdeck | Out-Null
+    Assert-True ($LASTEXITCODE -eq 0) 'Demarrage du dashboard echoue.'
+    $ready = $false
+    for ($i=0; $i -lt 60; $i++) {
+        try {
+            $session = Invoke-RestMethod "$Url/api/session"
+            $inventory = Invoke-RestMethod "$Url/api/snapshot" -Headers @{'X-Localdeck-Token'=$session.token} -TimeoutSec 2
+            if (-not $inventory.loading) { $ready = $true; break }
+        } catch { }
+        Start-Sleep -Milliseconds 500
+    }
+    Assert-True $ready 'Le conteneur existant doit retrouver le collecteur apres une nouvelle session.'
+    $recovered = Get-Content -LiteralPath (Join-Path $stateDirectory 'collector.json') -Raw | ConvertFrom-Json
+    Assert-True ($recovered.token -eq $settings.token) 'Le secret doit rester identique apres redemarrage.'
+    Write-Host 'PASS : raccourci de connexion Windows puis docker start, sans installation ni reconstruction, inventaire disponible et secret conserve.'
+}
 $session=Invoke-RestMethod "$Url/api/session"
 $headers=@{'X-Localdeck-Token'=$session.token}
 function Snapshot { Invoke-RestMethod "$Url/api/snapshot" -Headers $headers }

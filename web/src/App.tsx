@@ -399,6 +399,8 @@ function App() {
         token.current = (await session.json() as { token: string }).token
       }
       const response = await fetch("/api/snapshot", { headers: { "X-Localdeck-Token": token.current } })
+      // Restarting the Docker container creates a new dashboard session.
+      if (response.status === 403) token.current = ""
       const result = await response.json() as Snapshot & { error?: string }
       if (!response.ok) throw new Error(result.error || `Erreur ${response.status}`)
       setSnapshot(result)
@@ -831,7 +833,7 @@ function DashboardView(props: DashboardViewProps) {
             <div className="empty-state">
               <span className="empty-icon">{isLoading ? <LoaderCircle className="spin" aria-hidden="true" /> : <Search aria-hidden="true" />}</span>
               <strong>{isLoading ? "Premier inventaire en cours" : search ? "Aucun résultat pour cette recherche" : connection === "stale" ? "Collecteur indisponible" : view === "servers" ? "Aucun serveur de développement identifié" : view === "containers" ? "Aucun conteneur détecté" : "Aucun worktree trouvé"}</strong>
-              <span>{isLoading ? "Le collecteur Windows rassemble les informations du PC." : connection === "stale" ? "Relancez Start-Localdeck.ps1 sur Windows, puis actualisez." : search ? "Essayez un autre port, PID ou nom de projet." : view === "servers" ? "Activez Services système pour voir tous les ports." : view === "containers" ? "Vérifiez que Docker Desktop est démarré." : "Les racines configurées sont analysées par le collecteur."}</span>
+              <span>{isLoading ? "Le collecteur Windows rassemble les informations du PC." : connection === "stale" ? "Reconnexion automatique au collecteur Windows… Si le problème persiste, consultez les journaux Localdeck." : search ? "Essayez un autre port, PID ou nom de projet." : view === "servers" ? "Activez Services système pour voir tous les ports." : view === "containers" ? "Vérifiez que Docker Desktop est démarré." : "Les racines configurées sont analysées par le collecteur."}</span>
             </div>
           ) : null}
         </div>

@@ -41,3 +41,10 @@ jobs:
 
       - name: Run tests
         run: cargo test --locked
+
+      - name: Build Windows collector
+        run: cargo build --locked
+
+      - name: Test collector lifecycle
+        shell: powershell
+        run: .\Test-CollectorLifecycle.ps1

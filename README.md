@@ -6,21 +6,23 @@ Inventaire local des serveurs Windows, conteneurs Docker et worktrees Git. Backe
 
 Prérequis : Windows 64 bits, Docker Desktop en mode conteneurs Linux, Node.js 22+, Rust/Cargo et Git sur le PATH.
 
-Double-cliquez sur `Démarrer.cmd`. Le premier lancement compile l'interface, le collecteur Windows et construit l'image `localdeck:local`. Les lancements suivants réutilisent les caches. Ouvrez [localhost:4780](http://localhost:4780).
+À l'installation ou après une mise à jour, double-cliquez sur `Démarrer.cmd`. Ce lancement compile l'interface et le collecteur Windows, construit l'image `localdeck:local` et installe le démarrage automatique du collecteur pour votre compte Windows.
 
 ```powershell
 .\Start-Localdeck.ps1
 ```
 
-Dans Docker Desktop, le projet `localdeck` contient le service `dashboard`. Ses boutons Start/Stop pilotent l'interface. Le collecteur Windows reste disponible pour permettre les redémarrages du conteneur. Après un redémarrage du PC, relancez `Démarrer.cmd`.
+Au quotidien, démarrez le conteneur `localdeck` depuis Docker Desktop, puis ouvrez [localhost:4780](http://localhost:4780). Ses boutons Start/Stop pilotent l'interface. Le collecteur démarre en arrière-plan à votre connexion Windows et se relance s'il s'arrête. Vous n'avez plus de script à relancer après un redémarrage du PC.
 
-Pour fermer aussi le collecteur, double-cliquez sur `Arrêter.cmd` ou lancez :
+Pour fermer aussi le collecteur jusqu'à la prochaine connexion Windows, double-cliquez sur `Arrêter.cmd` ou lancez :
 
 ```powershell
 .\Stop-Localdeck.ps1
 ```
 
-Les autres projets et conteneurs restent en place. Aucun service au démarrage Windows n'est installé.
+Pour le réactiver dans la même session, utilisez `Démarrer.cmd`. Pour désactiver aussi son démarrage automatique, lancez `Stop-Localdeck.ps1 -DisableAutostart`. `Démarrer.cmd` le réinstalle.
+
+Le raccourci `Localdeck.lnk` est installé dans le dossier Démarrage de votre compte. Il lance un superviseur PowerShell masqué, sans droits administrateur. Le binaire et les scripts installés sont dans `%LOCALAPPDATA%\Localdeck`, indépendamment de la branche Git ouverte. Les autres projets et conteneurs restent en place.
 
 ## Ce que l'inventaire montre
 
@@ -44,13 +46,13 @@ Pour des projets ailleurs, modifiez `config.json` :
 { "roots": ["D:\\Projets", "C:\\Users\\vous\\Documents\\Autres projets"] }
 ```
 
-Arrêtez puis relancez Localdeck. La découverte des dossiers est limitée à trois niveaux et un budget de 2 500 dossiers par groupe de racines. Les worktrees des repos découverts sont tous recensés par Git. Les repos Git bare et les processus dont les droits interdisent la lecture peuvent manquer d'attribution.
+Relancez `Démarrer.cmd` pour appliquer la configuration au collecteur installé. La découverte des dossiers est limitée à trois niveaux et un budget de 2 500 dossiers par groupe de racines. Les worktrees des repos découverts sont tous recensés par Git. Les repos Git bare et les processus dont les droits interdisent la lecture peuvent manquer d'attribution.
 
 ## Architecture et limites
 
 Un conteneur Linux ne peut pas lire les processus Windows. Le collecteur natif écoute sur 4781 avec un secret aléatoire. Le conteneur s'y connecte via `host.docker.internal`. L'interface est publiée sur `127.0.0.1:4780`. Le port du collecteur doit être accessible depuis Docker Desktop ; il exige le secret sur chaque route. Aucun accès au socket Docker n'est monté dans le conteneur. Les appels Docker passent par le collecteur.
 
-Le secret, l'identité du collecteur et ses logs sont dans `%LOCALAPPDATA%\Localdeck`, hors du projet. L'interface utilise un jeton de session distinct. Les actions revérifient PID et date de démarrage, ou ID et date de démarrage du conteneur. Les erreurs de droits sont affichées. Le lancement normal ne demande pas de droits administrateur.
+Le secret, l'identité du collecteur et ses logs sont dans `%LOCALAPPDATA%\Localdeck`, hors du projet. Le secret est conservé entre les sessions Windows pour que le conteneur existant puisse se reconnecter. L'interface utilise un jeton de session distinct. Les actions revérifient PID et date de démarrage, ou ID et date de démarrage du conteneur. Les erreurs de droits sont affichées. Le lancement normal ne demande pas de droits administrateur.
 
 Les scans sont espacés de huit secondes après la fin de chaque collecte. Les repos et worktrees sont redécouverts environ une fois par minute. Le premier scan peut durer davantage. Le bouton Actualiser relit le dernier inventaire disponible. Les connexions TCP sont un instantané ; un onglet ouvert peut ne plus avoir de socket actif. L'inventaire n'identifie pas automatiquement le titre d'une conversation Codex ou OpenCode.
 
@@ -64,11 +66,18 @@ npm run build --prefix .\web
 cargo test --locked
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
+cargo build --locked
+.\Test-CollectorLifecycle.ps1
 .\Smoke-Test.ps1
+.\Smoke-Test.ps1 -RestartDashboard
 ```
 
 Le test d'intégration nécessite une instance Localdeck active, Node et l'image `redis:7-alpine` disponible. Il crée un repo temporaire avec un chemin contenant des espaces, lance un serveur après le collecteur, vérifie son attribution et son arrêt, puis arrête un conteneur jetable. Il nettoie uniquement ses fixtures.
 
-Les commandes Cargo embarquent la dernière sortie de `web`. Lancez d'abord `npm ci --prefix .\web` puis `npm run build --prefix .\web`. `Start-Localdeck.ps1` fait ces étapes automatiquement avant de recompiler le binaire. Après modification du binaire, fermez le collecteur avec `Arrêter.cmd` avant de le recompiler. Relancez `Démarrer.cmd` pour reconstruire aussi l'image Docker.
+L'option `-RestartDashboard` arrête d'abord Localdeck, lance le raccourci installé comme lors d'une connexion Windows, puis démarre le conteneur existant avec `docker start`. Elle vérifie le retour de l'inventaire et la conservation du secret avant les tests d'intégration. Elle ne redémarre pas le PC.
 
-Si le collecteur est indisponible, consultez `%LOCALAPPDATA%\Localdeck\collector-error.log`. Vérifiez que les ports 4780/4781 sont libres et que Docker Desktop tourne. Si le pare-feu bloque la communication avec le collecteur, ajustez la règle pour Docker Desktop selon votre configuration réseau.
+Le test de cycle de vie utilise un dossier temporaire et un port libre. Il vérifie la relance après panne, l'absence de doublons, le refus d'un PID périmé et la conservation du secret lors d'une nouvelle session. Il ne modifie pas le démarrage automatique du compte.
+
+Les commandes Cargo embarquent la dernière sortie de `web`. Lancez d'abord `npm ci --prefix .\web` puis `npm run build --prefix .\web`. `Start-Localdeck.ps1` fait ces étapes automatiquement, remplace le collecteur installé et reconstruit l'image Docker. Le collecteur installé ne verrouille pas les binaires de `target`.
+
+Si le collecteur reste indisponible, consultez `%LOCALAPPDATA%\Localdeck\collector-error.log` et `supervisor-error.log`. Vérifiez que Localdeck est autorisé dans les applications de démarrage Windows, que les ports 4780/4781 sont libres et que Docker Desktop tourne. Si le pare-feu bloque la communication avec le collecteur, ajustez la règle pour Docker Desktop selon votre configuration réseau.
