@@ -160,7 +160,7 @@ fn main() {
                 };
                 match result {
                     Ok(mut response) => { let status = response.status().as_u16(); let body = response.body_mut().read_to_string().unwrap_or_else(|_| "{}".into()); respond(req, status, body, "application/json"); }
-                    Err(_) => respond(req, 503, json!({"error":"Collecteur Windows indisponible. Relancez Start-Localdeck.ps1 sur Windows."}).to_string(), "application/json"),
+                    Err(_) => respond(req, 503, json!({"error":"Connexion au collecteur Windows interrompue. Nouvelle tentative automatique."}).to_string(), "application/json"),
                 }
             }
         } else if !collector && req.method() == &Method::Get {
