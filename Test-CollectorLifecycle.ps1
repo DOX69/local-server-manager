@@ -16,7 +16,18 @@ $env:LOCALDECK_PORT = "$port"
 $token = 'localdeck-lifecycle-test-token-123456789'
 $watcher = Join-Path $PSScriptRoot 'Watch-Localdeck.ps1'
 function Start-Watcher {
-    Start-Process powershell.exe -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', ('"'+$watcher+'"'), '-StateDirectory', ('"'+$fixture+'"')) -WindowStyle Hidden -WorkingDirectory $env:TEMP -PassThru
+    $runner = Start-Process powershell.exe -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', ('"'+$watcher+'"'), '-StateDirectory', ('"'+$fixture+'"')) -WindowStyle Hidden -WorkingDirectory $env:TEMP -PassThru
+    # An adopted collector can be ready before its new supervisor has even started.
+    for ($i=0; $i -lt 120; $i++) {
+        if ($runner.HasExited) { return $runner }
+        try {
+            $state = Get-Content -LiteralPath (Join-Path $fixture 'supervisor.json') -Raw | ConvertFrom-Json
+            if ($state.pid -eq $runner.Id -and (Get-LocaldeckProcess $state)) { return $runner }
+        } catch { }
+        Start-Sleep -Milliseconds 250
+    }
+    Stop-Process -Id $runner.Id
+    throw 'Le superviseur ne publie pas son identite.'
 }
 function Wait-Collector([int]$PreviousPid = 0) {
     for ($i=0; $i -lt 60; $i++) {
