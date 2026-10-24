@@ -10,6 +10,7 @@ try {
     @{ pid=$PID; ticks=$self.StartTime.ToUniversalTime().Ticks; binary=$self.Path } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $StateDirectory 'supervisor.json') -Encoding UTF8
     $settings = Get-Content -LiteralPath (Join-Path $StateDirectory 'settings.json') -Raw | ConvertFrom-Json
     $env:LOCALDECK_TOKEN = $settings.token
+    if ($settings.port) { $env:LOCALDECK_PORT = [string]$settings.port }
     $env:LOCALDECK_ROOTS = ConvertTo-Json -InputObject @($settings.roots) -Compress
     $statePath = Join-Path $StateDirectory 'collector.json'
     while ($true) {

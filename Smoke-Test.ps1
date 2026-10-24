@@ -5,13 +5,13 @@ if ($RestartDashboard) {
     . (Join-Path $PSScriptRoot 'Collector-Lifecycle.ps1')
     $stateDirectory = Join-Path $env:LOCALAPPDATA 'Localdeck'
     $settings = Get-Content -LiteralPath (Join-Path $stateDirectory 'settings.json') -Raw | ConvertFrom-Json
-    $shortcut = Join-Path ([Environment]::GetFolderPath('Startup')) 'Localdeck.lnk'
-    Assert-True (Test-Path -LiteralPath $shortcut) 'Le raccourci de demarrage Windows doit etre installe.'
+    $taskName = Get-LocaldeckTaskName
+    Assert-True (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) 'La tache de demarrage Windows doit etre installee.'
     & docker stop localdeck | Out-Null
     Assert-True ($LASTEXITCODE -eq 0) 'Arret du dashboard echoue.'
-    Stop-LocaldeckHost $stateDirectory
-    # Exercise the exact logon shortcut, without running the installer or rebuilding the container.
-    Start-Process -FilePath $shortcut -WindowStyle Hidden
+    Stop-LocaldeckHost $stateDirectory $taskName
+    # Exercise the installed logon task without running the installer or rebuilding the container.
+    Start-ScheduledTask -TaskName $taskName
     & docker start localdeck | Out-Null
     Assert-True ($LASTEXITCODE -eq 0) 'Demarrage du dashboard echoue.'
     $ready = $false
@@ -26,7 +26,22 @@ if ($RestartDashboard) {
     Assert-True $ready 'Le conteneur existant doit retrouver le collecteur apres une nouvelle session.'
     $recovered = Get-Content -LiteralPath (Join-Path $stateDirectory 'collector.json') -Raw | ConvertFrom-Json
     Assert-True ($recovered.token -eq $settings.token) 'Le secret doit rester identique apres redemarrage.'
-    Write-Host 'PASS : raccourci de connexion Windows puis docker start, sans installation ni reconstruction, inventaire disponible et secret conserve.'
+    Write-Host 'PASS : tache de connexion Windows puis docker start, sans installation ni reconstruction, inventaire disponible et secret conserve.'
+    & (Join-Path $PSScriptRoot 'Stop-Localdeck.ps1')
+    Assert-True (Get-LocaldeckProcess $recovered) 'Stop doit garder le collecteur pret pour Play dans Docker Desktop.'
+    & docker start localdeck | Out-Null
+    Assert-True ($LASTEXITCODE -eq 0) 'Le conteneur doit redemarrer apres Stop.'
+    $ready = $false
+    for ($i=0; $i -lt 30; $i++) {
+        try {
+            $session = Invoke-RestMethod "$Url/api/session"
+            $inventory = Invoke-RestMethod "$Url/api/snapshot" -Headers @{'X-Localdeck-Token'=$session.token} -TimeoutSec 2
+            if (-not $inventory.loading) { $ready = $true; break }
+        } catch { }
+        Start-Sleep -Milliseconds 500
+    }
+    Assert-True $ready 'Play apres Stop doit retrouver les donnees sans relancer le collecteur.'
+    Write-Host 'PASS : Stop puis Play Docker, collecteur conserve et inventaire directement disponible.'
 }
 $session=Invoke-RestMethod "$Url/api/session"
 $headers=@{'X-Localdeck-Token'=$session.token}

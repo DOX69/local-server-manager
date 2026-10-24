@@ -26,7 +26,10 @@ try {
         $rng.Dispose()
         $token = ([BitConverter]::ToString($tokenBytes)).Replace('-', '').ToLowerInvariant()
     }
-    Stop-LocaldeckHost $stateDirectory
+    if (Get-ScheduledTask -TaskName (Get-LocaldeckTaskName) -ErrorAction SilentlyContinue) {
+        Disable-ScheduledTask -TaskName (Get-LocaldeckTaskName) | Out-Null
+    }
+    Stop-LocaldeckHost $stateDirectory (Get-LocaldeckTaskName)
     if (-not $SkipBuild -or -not (Test-Path -LiteralPath $binaryPath)) {
         Push-Location (Join-Path $projectDirectory 'web')
         try {
@@ -46,16 +49,11 @@ try {
     }
     $configuration = Get-Content -LiteralPath (Join-Path $projectDirectory 'config.json') -Raw | ConvertFrom-Json
     @{ token=$token; binary=$installedBinary; roots=@($configuration.roots) } | ConvertTo-Json | Set-Content -LiteralPath $settingsPath -Encoding UTF8
-    $powershell = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
-    $arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "'+(Join-Path $stateDirectory 'Watch-Localdeck.ps1')+'"'
-    $shell = New-Object -ComObject WScript.Shell
-    $shortcut = $shell.CreateShortcut((Join-Path ([Environment]::GetFolderPath('Startup')) 'Localdeck.lnk'))
-    $shortcut.TargetPath = $powershell
-    $shortcut.Arguments = $arguments
-    $shortcut.WorkingDirectory = $stateDirectory
-    $shortcut.WindowStyle = 7
-    $shortcut.Save()
-    Start-Process -FilePath $powershell -ArgumentList $arguments -WindowStyle Hidden | Out-Null
+    Register-LocaldeckAutostart $stateDirectory
+    $shortcut = Join-Path ([Environment]::GetFolderPath('Startup')) 'Localdeck.lnk'
+    if (Test-Path -LiteralPath $shortcut) { Remove-Item -LiteralPath $shortcut }
+    # Windows owns this process, independently of the terminal running the installer.
+    Start-ScheduledTask -TaskName (Get-LocaldeckTaskName)
     $env:LOCALDECK_TOKEN = $token
     $ready = $false
     for ($attempt=0; $attempt -lt 30; $attempt++) {
