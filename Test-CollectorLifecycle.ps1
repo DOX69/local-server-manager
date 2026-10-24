@@ -7,7 +7,9 @@ foreach ($script in (Get-ChildItem -LiteralPath $PSScriptRoot -Filter *.ps1)) {
     [System.Management.Automation.Language.Parser]::ParseFile($script.FullName, [ref]$parseTokens, [ref]$parseErrors) | Out-Null
     Assert-True (-not $parseErrors) ("Syntaxe PowerShell invalide : "+$script.Name+" "+($parseErrors.Message -join '; '))
 }
-$fixture = Join-Path $env:TEMP ('Localdeck lifecycle '+[guid]::NewGuid().ToString('N'))
+$fixtureRoot = Join-Path $PSScriptRoot 'artifacts'
+New-Item -ItemType Directory -Path $fixtureRoot -Force | Out-Null
+$fixture = Join-Path $fixtureRoot ('Localdeck lifecycle '+[guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $fixture | Out-Null
 $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)
 $listener.Start(); $port = $listener.LocalEndpoint.Port; $listener.Stop()
@@ -15,6 +17,7 @@ $previousPort = $env:LOCALDECK_PORT
 $env:LOCALDECK_PORT = "$port"
 $token = 'localdeck-lifecycle-test-token-123456789'
 $watcher = Join-Path $PSScriptRoot 'Watch-Localdeck.ps1'
+$taskName = 'Localdeck-test-'+[guid]::NewGuid().ToString('N')
 function Start-Watcher {
     $runner = Start-Process powershell.exe -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', ('"'+$watcher+'"'), '-StateDirectory', ('"'+$fixture+'"')) -WindowStyle Hidden -WorkingDirectory $env:TEMP -PassThru
     # An adopted collector can be ready before its new supervisor has even started.
@@ -44,8 +47,12 @@ function Wait-Collector([int]$PreviousPid = 0) {
     throw 'Collecteur attendu absent.'
 }
 try {
-    Copy-Item -LiteralPath $Binary -Destination (Join-Path $fixture 'localdeck.exe')
-    @{ token=$token; binary=(Join-Path $fixture 'localdeck.exe'); roots=@() } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $fixture 'settings.json') -Encoding UTF8
+    # Reuse one executable path so Windows Firewall does not prompt for every fixture.
+    $testBinary = (Resolve-Path -LiteralPath $Binary).Path
+    foreach ($name in @('Watch-Localdeck.ps1', 'Collector-Lifecycle.ps1')) {
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination (Join-Path $fixture $name)
+    }
+    @{ token=$token; binary=$testBinary; roots=@(); port=$port } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $fixture 'settings.json') -Encoding UTF8
     $supervisor = Start-Watcher
     $first = Wait-Collector
     Assert-True ($first.token -eq $token) 'Le secret configure doit etre conserve.'
@@ -66,13 +73,45 @@ try {
     $supervisor = Start-Watcher
     $fresh = Wait-Collector $recovered.pid
     Assert-True ($fresh.token -eq $token) 'Une nouvelle session doit reutiliser le secret.'
+    Stop-LocaldeckHost $fixture
+    Register-LocaldeckAutostart $fixture $taskName
+    Start-ScheduledTask -TaskName $taskName
+    $scheduled = Wait-Collector $fresh.pid
+    $task = Get-ScheduledTask -TaskName $taskName
+    Assert-True ($task.Principal.RunLevel -eq 'Limited') 'La tache doit rester sans elevation.'
+    Assert-True ($task.Settings.ExecutionTimeLimit -eq 'PT0S') 'Le superviseur ne doit pas expirer apres trois jours.'
+    $scheduledSupervisor = Get-Content -LiteralPath (Join-Path $fixture 'supervisor.json') -Raw | ConvertFrom-Json
+    Stop-Process -Id $scheduledSupervisor.pid
+    Stop-Process -Id $scheduled.pid
+    # The repeating trigger recovers even a supervisor killed without an error code.
+    $recoveredTask = $null
+    for ($i=0; $i -lt 180; $i++) {
+        try {
+            $state = Get-Content -LiteralPath (Join-Path $fixture 'collector.json') -Raw | ConvertFrom-Json
+            if ($state.pid -ne $scheduled.pid -and (Get-LocaldeckProcess $state)) {
+                $recoveredTask = Wait-Collector $scheduled.pid
+                break
+            }
+        } catch { }
+        Start-Sleep -Milliseconds 500
+    }
+    Assert-True $recoveredTask 'La tache doit relancer le superviseur et le collecteur apres leur arret brutal.'
+    Assert-True ($recoveredTask.token -eq $token) 'La reprise automatique doit conserver le secret.'
+    Stop-LocaldeckHost $fixture $taskName
+    Assert-True (-not (Get-LocaldeckProcess $recoveredTask)) 'L arret explicite doit fermer le collecteur supervise par Windows.'
+    Start-ScheduledTask -TaskName $taskName
+    Wait-Collector $recoveredTask.pid | Out-Null
+    Write-Host 'PASS : tache Windows sans elevation, reprise automatique du superviseur et collecteur, arret explicite et nouvelle connexion.'
     Write-Host 'PASS : demarrage sans repo ni secret dans le shell, doublon, PID perime, reprise, relance apres panne, nouvelle session et secret stable.'
 } finally {
-    Stop-LocaldeckHost $fixture
+    if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) {
+        Stop-LocaldeckHost $fixture $taskName
+        Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
+    } else { Stop-LocaldeckHost $fixture }
     $env:LOCALDECK_PORT = $previousPort
     $resolved = [IO.Path]::GetFullPath($fixture)
-    $tempRoot = [IO.Path]::GetFullPath($env:TEMP).TrimEnd('\')+'\'
-    if ($resolved.StartsWith($tempRoot, [StringComparison]::OrdinalIgnoreCase) -and (Split-Path $resolved -Leaf).StartsWith('Localdeck lifecycle ')) {
+    $resolvedRoot = [IO.Path]::GetFullPath($fixtureRoot).TrimEnd('\')+'\'
+    if ($resolved.StartsWith($resolvedRoot, [StringComparison]::OrdinalIgnoreCase) -and (Split-Path $resolved -Leaf).StartsWith('Localdeck lifecycle ')) {
         Remove-Item -LiteralPath $resolved -Recurse -Force
     }
 }

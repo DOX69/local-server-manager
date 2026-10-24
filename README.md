@@ -14,15 +14,15 @@ Prérequis : Windows 64 bits, Docker Desktop en mode conteneurs Linux, Node.js 2
 
 Au quotidien, démarrez le conteneur `localdeck` depuis Docker Desktop, puis ouvrez [localhost:4780](http://localhost:4780). Ses boutons Start/Stop pilotent l'interface. Le collecteur démarre en arrière-plan à votre connexion Windows et se relance s'il s'arrête. Vous n'avez plus de script à relancer après un redémarrage du PC.
 
-Pour fermer aussi le collecteur jusqu'à la prochaine connexion Windows, double-cliquez sur `Arrêter.cmd` ou lancez :
+Pour fermer l'interface, utilisez Stop dans Docker Desktop, double-cliquez sur `Arrêter.cmd` ou lancez :
 
 ```powershell
 .\Stop-Localdeck.ps1
 ```
 
-Pour le réactiver dans la même session, utilisez `Démarrer.cmd`. Pour désactiver aussi son démarrage automatique, lancez `Stop-Localdeck.ps1 -DisableAutostart`. `Démarrer.cmd` le réinstalle.
+Le collecteur reste actif pour que le prochain clic sur Play fonctionne directement. Pour l'arrêter et désactiver son démarrage automatique, lancez `Stop-Localdeck.ps1 -DisableAutostart`. `Démarrer.cmd` le réinstalle.
 
-Le raccourci `Localdeck.lnk` est installé dans le dossier Démarrage de votre compte. Il lance un superviseur PowerShell masqué, sans droits administrateur. Le binaire et les scripts installés sont dans `%LOCALAPPDATA%\Localdeck`, indépendamment de la branche Git ouverte. Les autres projets et conteneurs restent en place.
+Une tâche Windows `Localdeck-<SID du compte>` lance un superviseur PowerShell masqué à votre connexion, sans élévation. Chaque minute, Windows vérifie qu'il tourne et le relance si nécessaire. Sa durée d'exécution est illimitée. Le superviseur relance le collecteur si celui-ci s'arrête. Le binaire et les scripts installés sont dans `%LOCALAPPDATA%\Localdeck`, indépendamment du terminal d'installation et de la branche Git ouverte. L'installation remplace l'ancien raccourci `Localdeck.lnk`. Les autres projets et conteneurs restent en place.
 
 ## Ce que l'inventaire montre
 
@@ -74,10 +74,10 @@ cargo build --locked
 
 Le test d'intégration nécessite une instance Localdeck active, Node et l'image `redis:7-alpine` disponible. Il crée un repo temporaire avec un chemin contenant des espaces, lance un serveur après le collecteur, vérifie son attribution et son arrêt, puis arrête un conteneur jetable. Il nettoie uniquement ses fixtures.
 
-L'option `-RestartDashboard` arrête d'abord Localdeck, lance le raccourci installé comme lors d'une connexion Windows, puis démarre le conteneur existant avec `docker start`. Elle vérifie le retour de l'inventaire et la conservation du secret avant les tests d'intégration. Elle ne redémarre pas le PC.
+L'option `-RestartDashboard` arrête d'abord Localdeck, lance la tâche installée comme lors d'une connexion Windows, puis démarre le conteneur existant avec `docker start`. Elle vérifie le retour de l'inventaire et la conservation du secret avant les tests d'intégration. Elle ne redémarre pas le PC.
 
-Le test de cycle de vie utilise un dossier temporaire et un port libre. Il vérifie la relance après panne, l'absence de doublons, le refus d'un PID périmé et la conservation du secret lors d'une nouvelle session. Il ne modifie pas le démarrage automatique du compte.
+Le test de cycle de vie utilise un dossier temporaire, un port libre et une tâche Windows jetable. Il vérifie la relance après panne du collecteur et du superviseur, l'absence de doublons, le refus d'un PID périmé et la conservation du secret lors d'une nouvelle session. Il conserve la tâche Localdeck installée.
 
 Les commandes Cargo embarquent la dernière sortie de `web`. Lancez d'abord `npm ci --prefix .\web` puis `npm run build --prefix .\web`. `Start-Localdeck.ps1` fait ces étapes automatiquement, remplace le collecteur installé et reconstruit l'image Docker. Le collecteur installé ne verrouille pas les binaires de `target`.
 
-Si le collecteur reste indisponible, consultez `%LOCALAPPDATA%\Localdeck\collector-error.log` et `supervisor-error.log`. Vérifiez que Localdeck est autorisé dans les applications de démarrage Windows, que les ports 4780/4781 sont libres et que Docker Desktop tourne. Si le pare-feu bloque la communication avec le collecteur, ajustez la règle pour Docker Desktop selon votre configuration réseau.
+Si le collecteur reste indisponible, consultez `%LOCALAPPDATA%\Localdeck\collector-error.log` et `supervisor-error.log`. Vérifiez que la tâche Localdeck est active dans le Planificateur de tâches Windows, que les ports 4780/4781 sont libres et que Docker Desktop tourne. Si le pare-feu bloque la communication avec le collecteur, ajustez la règle pour Docker Desktop selon votre configuration réseau.
