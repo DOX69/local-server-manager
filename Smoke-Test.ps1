@@ -1,4 +1,4 @@
-param([string]$Url='http://localhost:4780', [switch]$RestartDashboard)
+param([string]$Url='http://127.0.0.1:4780', [switch]$RestartDashboard)
 $ErrorActionPreference='Stop'
 function Assert-True($Condition, [string]$Message) { if (-not $Condition) { throw $Message } }
 if ($RestartDashboard) {
@@ -17,7 +17,7 @@ if ($RestartDashboard) {
     $ready = $false
     for ($i=0; $i -lt 60; $i++) {
         try {
-            $session = Invoke-RestMethod "$Url/api/session"
+            $session = Invoke-RestMethod "$Url/api/session" -TimeoutSec 2
             $inventory = Invoke-RestMethod "$Url/api/snapshot" -Headers @{'X-Localdeck-Token'=$session.token} -TimeoutSec 2
             if (-not $inventory.loading) { $ready = $true; break }
         } catch { }
@@ -34,7 +34,7 @@ if ($RestartDashboard) {
     $ready = $false
     for ($i=0; $i -lt 30; $i++) {
         try {
-            $session = Invoke-RestMethod "$Url/api/session"
+            $session = Invoke-RestMethod "$Url/api/session" -TimeoutSec 2
             $inventory = Invoke-RestMethod "$Url/api/snapshot" -Headers @{'X-Localdeck-Token'=$session.token} -TimeoutSec 2
             if (-not $inventory.loading) { $ready = $true; break }
         } catch { }

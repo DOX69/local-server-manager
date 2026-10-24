@@ -47,11 +47,12 @@ function Wait-Collector([int]$PreviousPid = 0) {
     throw 'Collecteur attendu absent.'
 }
 try {
-    Copy-Item -LiteralPath $Binary -Destination (Join-Path $fixture 'localdeck.exe')
+    # Reuse one executable path so Windows Firewall does not prompt for every fixture.
+    $testBinary = (Resolve-Path -LiteralPath $Binary).Path
     foreach ($name in @('Watch-Localdeck.ps1', 'Collector-Lifecycle.ps1')) {
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination (Join-Path $fixture $name)
     }
-    @{ token=$token; binary=(Join-Path $fixture 'localdeck.exe'); roots=@(); port=$port } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $fixture 'settings.json') -Encoding UTF8
+    @{ token=$token; binary=$testBinary; roots=@(); port=$port } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $fixture 'settings.json') -Encoding UTF8
     $supervisor = Start-Watcher
     $first = Wait-Collector
     Assert-True ($first.token -eq $token) 'Le secret configure doit etre conserve.'
